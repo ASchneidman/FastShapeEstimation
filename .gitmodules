@@ -1,0 +1,3 @@
+[submodule "submodules/Pix2Vox"]
+	path = submodules/Pix2Vox
+	url = https://github.com/hzxie/Pix2Vox
