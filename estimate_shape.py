@@ -4,6 +4,7 @@ import os
 import torch
 import torch.backends.cudnn
 import torch.utils.data
+import torchvision
 
 import submodules.Pix2Vox.utils.binvox_visualization as binvox_visualization
 import submodules.Pix2Vox.utils.data_transforms as data_transforms
@@ -33,14 +34,43 @@ def infer(cfg, img, epoch_idx=-1):
 
     IMG_SIZE = cfg.CONST.IMG_H, cfg.CONST.IMG_W
     CROP_SIZE = IMG_SIZE
+
+
+    img = torch.tensor(img[0])
+    img = torchvision.transforms.Resize(IMG_SIZE)(img.permute(2, 1, 0)).permute(2,1,0)
+    img = img.unsqueeze(0)
+    img = img.numpy()
+    print(img.shape)
+
+    
     test_transforms = data_transforms.Compose([
         data_transforms.CenterCrop(IMG_SIZE, CROP_SIZE),
         data_transforms.Normalize(mean=cfg.DATASET.MEAN, std=cfg.DATASET.STD),
         data_transforms.ToTensor(),
     ])
-
     inp = test_transforms(img)
+
+    plt.imshow(inp[0].permute(2,1,0))
+    plt.show()
+
     inp = inp.unsqueeze(0)
+    
+    
+    """
+    test_transforms = torchvision.transforms.Compose([
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Resize(IMG_SIZE),
+        torchvision.transforms.Normalize(mean=cfg.DATASET.MEAN, std=cfg.DATASET.STD),
+        torchvision.transforms.CenterCrop(IMG_SIZE)
+    ])
+    
+    inp = test_transforms(img[0])
+    #print(inp.shape)
+    #plt.imshow(inp.permute(2, 1, 0))
+    #plt.show()
+    inp = inp.unsqueeze(0).unsqueeze(0)
+    """
+
 
     # Set up networks
     encoder = Encoder(cfg)
@@ -159,7 +189,7 @@ def main():
        'col_idx': torch.tensor(faces.copy()),
        'vtx_col': torch.ones(verts.shape)}
 
-    fit_mesh.fit_mesh(initial_mesh, None)
+    #fit_mesh.fit_mesh(initial_mesh, None)
 
     # visualize mesh
     fig = plt.figure(figsize=(10, 10))
