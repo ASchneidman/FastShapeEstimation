@@ -24,6 +24,8 @@ import skimage.measure
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
+import fit_mesh
+
 
 def infer(cfg, img, epoch_idx=-1):
     # Enable the inbuilt cudnn auto-tuner to find the best algorithm to use
@@ -147,6 +149,17 @@ def main():
     inp = np.concatenate(inp)
     volume = infer(cfg, inp)
     verts, faces, normals, values = skimage.measure.marching_cubes_lewiner(volume)
+
+    print(verts.shape)
+    print(faces.shape)
+
+    initial_mesh = {
+       'pos_idx': torch.tensor(faces.copy()), 
+       'vtx_pos': (torch.tensor(verts.copy()) - 16) / 32, 
+       'col_idx': torch.tensor(faces.copy()),
+       'vtx_col': torch.ones(verts.shape)}
+
+    fit_mesh.fit_mesh(initial_mesh, None)
 
     # visualize mesh
     fig = plt.figure(figsize=(10, 10))

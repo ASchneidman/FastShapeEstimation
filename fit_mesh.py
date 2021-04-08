@@ -1,13 +1,14 @@
 import torch
-import numpy
+import numpy as np
 import nvdiffrast.torch as dr
+import math
 
 import util
 
 def transform_pos(mtx, pos):
     # (x,y,z) -> (x,y,z,1)
     posw = torch.cat([pos, torch.ones([pos.shape[0], 1]).cuda()], axis=1)
-    return torch.matmul(posw, t_mtx.t())[None, ...]
+    return torch.matmul(posw, mtx.t())[None, ...]
 
 def render(
     glctx, 
@@ -24,11 +25,12 @@ def render(
     # rotate model about z axis by angle
     rot = util.rotate(angle)
     # translate by distance
-    tr = util.translate(-distance)
+    tr = util.translate(z=-distance)
     # perspective projection
     proj = util.projection(x=0.4)
 
-    mtx = proj.dot(tr.dot(rot)).cuda()
+    mtx = proj.matmul(tr.matmul(rot)).cuda()
+
 
     clipped = transform_pos(mtx, vtx_pos)
     rast_out, _ = dr.rasterize(glctx, clipped, pos_idx, resolution=[resolution, resolution])
@@ -39,7 +41,7 @@ def render(
 
 def fit_mesh(
     initial_mesh: dict,
-    target_dataset: torch.Dataset,
+    target_dataset,
     max_iterations: int = 5000,
     resolution: int = 4,
     log_interval: int = 10,
@@ -56,10 +58,18 @@ def fit_mesh(
     glctx = dr.RasterizeGLContext()
 
 
-    optimizer    = torch.optim.Adam([vtx_pos, vtx_col_opt], lr=1e-2)
-    scheduler    = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: max(0.01, 10**(-x*0.0005)))
+    #optimizer    = torch.optim.Adam([vtx_pos, vtx_col_opt], lr=1e-2)
+    #scheduler    = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: max(0.01, 10**(-x*0.0005)))
 
     total_steps = 0
+
+    estimate = render(glctx, vtx_pos, pos_idx, vtx_col, col_idx, 0, 3.5, 256)
+    img = estimate.detach().cpu().numpy()
+    print(img.shape)
+    while True:
+        util.display_image(img[0], title='test', size=512)
+    return
+
     for i in range(max_iterations):
         for angle, distance, img in target_dataset:
             img = img.cuda()
@@ -73,3 +83,12 @@ def fit_mesh(
             scheduler.step()
 
             total_steps += 1
+
+
+if __name__ == '__main__':
+    with np.load('cube_c.npz') as f:
+        pos_idx, vtxp, col_idx, vtxc = f.values()
+    fit_mesh({'pos_idx': torch.tensor(pos_idx.astype(np.int32)), 
+    'vtx_pos': torch.tensor(vtxp.astype(np.float32)), 
+    'col_idx': torch.tensor(col_idx.astype(np.int32)), 
+    'vtx_col': torch.tensor(vtxc.astype(np.float32))}, None)
