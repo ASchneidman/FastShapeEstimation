@@ -1,3 +1,6 @@
 [submodule "submodules/Pix2Vox"]
 	path = submodules/Pix2Vox
 	url = https://github.com/hzxie/Pix2Vox
+[submodule "submodules/3D-R2N2-PyTorch"]
+	path = submodules/3D-R2N2-PyTorch
+	url = https://github.com/heromanba/3D-R2N2-PyTorch

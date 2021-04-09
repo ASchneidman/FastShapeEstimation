@@ -1,197 +1,78 @@
-import json
-import numpy as np
+'''
+Demo code for the paper
+
+Choy et al., 3D-R2N2: A Unified Approach for Single and Multi-view 3D Object
+Reconstruction, ECCV 2016
+'''
 import os
+import sys
+import shutil
+import numpy as np
+from subprocess import call
+
 import torch
-import torch.backends.cudnn
-import torch.utils.data
-import torchvision
-
-import submodules.Pix2Vox.utils.binvox_visualization as binvox_visualization
-import submodules.Pix2Vox.utils.data_transforms as data_transforms
-import submodules.Pix2Vox.utils.network_utils as network_utils
-import submodules.Pix2Vox.utils.data_loaders as data_loaders
-
-from argparse import ArgumentParser
-from datetime import datetime as dt
-
-from submodules.Pix2Vox.models.encoder import Encoder
-from submodules.Pix2Vox.models.decoder import Decoder
-from submodules.Pix2Vox.models.refiner import Refiner
-from submodules.Pix2Vox.models.merger import Merger
-from submodules.Pix2Vox.config import cfg
 
 from PIL import Image
+from models import load_model
+from lib.config import cfg, cfg_from_list
+from lib.data_augmentation import preprocess_img
+from lib.solver import Solver
+from lib.voxel import voxel2obj
+
 import skimage.measure
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-import fit_mesh
+
+DEFAULT_WEIGHTS = 'output/ResidualGRUNet/default_model/checkpoint.pth'
 
 
-def infer(cfg, img, epoch_idx=-1):
-    # Enable the inbuilt cudnn auto-tuner to find the best algorithm to use
-    torch.backends.cudnn.benchmark = True
-
-    IMG_SIZE = cfg.CONST.IMG_H, cfg.CONST.IMG_W
-    CROP_SIZE = IMG_SIZE
-
-
-    img = torch.tensor(img[0])
-    img = torchvision.transforms.Resize(IMG_SIZE)(img.permute(2, 1, 0)).permute(2,1,0)
-    img = img.unsqueeze(0)
-    img = img.numpy()
-    print(img.shape)
-
+def load_demo_images(paths):
+    img_h = cfg.CONST.IMG_H
+    img_w = cfg.CONST.IMG_W
     
-    test_transforms = data_transforms.Compose([
-        data_transforms.CenterCrop(IMG_SIZE, CROP_SIZE),
-        data_transforms.Normalize(mean=cfg.DATASET.MEAN, std=cfg.DATASET.STD),
-        data_transforms.ToTensor(),
-    ])
-    inp = test_transforms(img)
-
-    plt.imshow(inp[0].permute(2,1,0))
-    plt.show()
-
-    inp = inp.unsqueeze(0)
+    imgs = []
     
-    
-    """
-    test_transforms = torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Resize(IMG_SIZE),
-        torchvision.transforms.Normalize(mean=cfg.DATASET.MEAN, std=cfg.DATASET.STD),
-        torchvision.transforms.CenterCrop(IMG_SIZE)
-    ])
-    
-    inp = test_transforms(img[0])
-    #print(inp.shape)
-    #plt.imshow(inp.permute(2, 1, 0))
-    #plt.show()
-    inp = inp.unsqueeze(0).unsqueeze(0)
-    """
-
-
-    # Set up networks
-    encoder = Encoder(cfg)
-    decoder = Decoder(cfg)
-    refiner = Refiner(cfg)
-    merger = Merger(cfg)
-
-    if torch.cuda.is_available():
-        encoder = torch.nn.DataParallel(encoder).cuda()
-        decoder = torch.nn.DataParallel(decoder).cuda()
-        refiner = torch.nn.DataParallel(refiner).cuda()
-        merger = torch.nn.DataParallel(merger).cuda()
-
-    print('[INFO] %s Loading weights from %s ...' % (dt.now(), cfg.CONST.WEIGHTS))
-    checkpoint = torch.load(cfg.CONST.WEIGHTS)
-    epoch_idx = checkpoint['epoch_idx']
-    encoder.load_state_dict(checkpoint['encoder_state_dict'])
-    decoder.load_state_dict(checkpoint['decoder_state_dict'])
-
-    if cfg.NETWORK.USE_REFINER:
-        refiner.load_state_dict(checkpoint['refiner_state_dict'])
-    if cfg.NETWORK.USE_MERGER:
-        merger.load_state_dict(checkpoint['merger_state_dict'])
-
-    # Switch models to evaluation mode
-    encoder.eval()
-    decoder.eval()
-    refiner.eval()
-    merger.eval()
-
-    with torch.no_grad():
-        # Get data from data loader
-        rendering_images = network_utils.var_or_cuda(inp)
-
-        # Test the encoder, decoder, refiner and merger
-        # [1, 1, 3, 224, 224]
-        image_features = encoder(rendering_images)
-        raw_features, generated_volume = decoder(image_features)
-
-        if cfg.NETWORK.USE_MERGER:
-            generated_volume = merger(raw_features, generated_volume)
-        else:
-            generated_volume = torch.mean(generated_volume, dim=1)
-
-        if cfg.NETWORK.USE_REFINER:
-            generated_volume = refiner(generated_volume)
-
-        # [1, 32, 32, 32]
-
-        # Volume Visualization
-        gv = generated_volume.cpu().numpy()[0]
-        # rendering_views = utils.binvox_visualization.get_volume_views(gv, 'test', epoch_idx)
-    return gv
-
-
-def get_args_from_command_line():
-    parser = ArgumentParser(description='Parser of Runner of Pix2Vox')
-    parser.add_argument('--gpu',
-                        dest='gpu_id',
-                        help='GPU device id to use [cuda0]',
-                        default=cfg.CONST.DEVICE,
-                        type=str)
-    parser.add_argument('--rand', dest='randomize', help='Randomize (do not use a fixed seed)', action='store_true')
-    parser.add_argument('--test', dest='test', help='Test neural networks', action='store_true')
-    parser.add_argument('--infer', dest='infer', help='Infer neural networks', action='store_true')
-    parser.add_argument('--batch-size',
-                        dest='batch_size',
-                        help='name of the net',
-                        default=cfg.CONST.BATCH_SIZE,
-                        type=int)
-    parser.add_argument('--epoch', dest='epoch', help='number of epoches', default=cfg.TRAIN.NUM_EPOCHES, type=int)
-    parser.add_argument('--weights', dest='weights', help='Initialize network from the weights file', default=None)
-    parser.add_argument('--out', dest='out_path', help='Set output path', default=cfg.DIR.OUT_PATH)
-    parser.add_argument('--img', '--list', nargs='+', dest='img', help='Path to images', required=True)
-    args = parser.parse_args()
-    return args
+    for path in paths:
+        img = Image.open(path)
+        img = img.resize((img_h, img_w), Image.ANTIALIAS)
+        img = preprocess_img(img, train=False)
+        imgs.append([np.array(img).transpose( \
+                        (2, 0, 1)).astype(np.float32)])
+    ims_np = np.array(imgs).astype(np.float32)
+    return torch.from_numpy(ims_np)
 
 
 def main():
-    args = get_args_from_command_line()
+    '''Main demo function'''
+    # Save prediction into a file named 'prediction.obj' or the given argument
+    pred_file_name = sys.argv[1] if len(sys.argv) > 1 else 'prediction.obj'
 
-    if args.gpu_id is not None:
-        cfg.CONST.DEVICE = args.gpu_id
-    if not args.randomize:
-        np.random.seed(cfg.CONST.RNG_SEED)
-    if args.batch_size is not None:
-        cfg.CONST.BATCH_SIZE = args.batch_size
-    if args.epoch is not None:
-        cfg.TRAIN.NUM_EPOCHES = args.epoch
-    if args.out_path is not None:
-        cfg.DIR.OUT_PATH = args.out_path
-    if args.weights is not None:
-        cfg.CONST.WEIGHTS = args.weights
-        if not args.test:
-            cfg.TRAIN.RESUME_TRAIN = True
+    # load images
+    demo_imgs = load_demo_images(paths)
+    print(demo_imgs.shape)
 
-    # Set GPU to use
-    if type(cfg.CONST.DEVICE) == str:
-        os.environ["CUDA_VISIBLE_DEVICES"] = cfg.CONST.DEVICE
+    # Use the default network model
+    NetClass = load_model('ResidualGRUNet')
 
-    inp = []
-    for path in args.img:
-        img = Image.open(path)
-        img = np.array(img, dtype=np.float32)[None, :, :, :3] / 255
-        inp.append(img)
-    inp = np.concatenate(inp)
-    volume = infer(cfg, inp)
-    verts, faces, normals, values = skimage.measure.marching_cubes_lewiner(volume)
+    # Define a network and a solver. Solver provides a wrapper for the test function.
+    net = NetClass()  # instantiate a network
+    if torch.cuda.is_available():
+        net.cuda()
 
-    print(verts.shape)
-    print(faces.shape)
+    net.eval()
 
-    initial_mesh = {
-       'pos_idx': torch.tensor(faces.copy()), 
-       'vtx_pos': (torch.tensor(verts.copy()) - 16) / 32, 
-       'col_idx': torch.tensor(faces.copy()),
-       'vtx_col': torch.ones(verts.shape)}
+    solver = Solver(net)                # instantiate a solver
+    solver.load(DEFAULT_WEIGHTS)
 
-    #fit_mesh.fit_mesh(initial_mesh, None)
+    # Run the network
+    voxel_prediction, _ = solver.test_output(demo_imgs)
+    voxel_prediction = voxel_prediction.detach().cpu().numpy()
+    print(voxel_prediction.shape)
+    # Save the prediction to an OBJ file (mesh file).
+    voxel2obj(pred_file_name, voxel_prediction[0, 1] > cfg.TEST.VOXEL_THRESH)
 
-    # visualize mesh
+    verts, faces, normals, values = skimage.measure.marching_cubes_lewiner(voxel_prediction[0, 1] > cfg.TEST.VOXEL_THRESH)
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection='3d')
 
@@ -212,7 +93,12 @@ def main():
 
 
 if __name__ == '__main__':
-    # download weights from: https://github.com/hzxie/Pix2Vox/tree/Pix2Vox-F
-    # put weights in submodules/Pix2Vox/pretrained
-    # run: python estimate_shape.py --weights submodules/Pix2Vox/pretrained/Pix2Vox-A-ShapeNet.pth --img chair.png
-    main()
+    # Set the batch size to 1
+    # run: python estimate_shape.py
+    # change the path to images and pretrained weights
+    cfg_from_list(['CONST.BATCH_SIZE', 1])
+    # weight: https://drive.google.com/open?id=1LtNhuUQdAeAyIUiuCavofBpjw26Ag6DP
+    DEFAULT_WEIGHTS = 'path/to/weight.pkl'
+    paths = ['images/chair.png']
+    main(paths)
+    
