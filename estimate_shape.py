@@ -38,18 +38,32 @@ DEFAULT_WEIGHTS = 'output/ResidualGRUNet/default_model/checkpoint.pth'
 def load_demo_images(paths):
     img_h = cfg.CONST.IMG_H
     img_w = cfg.CONST.IMG_W
+
+    model = torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True)
+
     
+    """
     imgs = []
     for path in paths:
-        #img = Image.open(path)
-        img = segment(path)
-        print(img.shape)
-        img = transforms.ToPILImage()(img)
+        img = Image.open(path)
+        #img = segment(path)
+        #img = transforms.ToPILImage()(img)
         img = img.resize((img_h, img_w), Image.ANTIALIAS)
         img = preprocess_img(img, train=False)
         imgs.append([np.array(img).transpose( \
                         (2, 0, 1)).astype(np.float32)])
-    ims_np = np.array(imgs).astype(np.float32)
+    """
+
+    imgs = segment(paths, model)
+    result = []
+    for img in imgs:
+        img = transforms.ToPILImage()(img)
+        img = img.resize((img_h, img_w), Image.ANTIALIAS)
+        img = preprocess_img(img, train=False)
+        result.append([np.array(img).transpose( \
+                        (2, 0, 1)).astype(np.float32)])
+
+    ims_np = np.array(result).astype(np.float32)
 
     return torch.from_numpy(ims_np)
 
@@ -116,6 +130,6 @@ if __name__ == '__main__':
     cfg_from_list(['CONST.BATCH_SIZE', 1])
     # weight: https://drive.google.com/open?id=1LtNhuUQdAeAyIUiuCavofBpjw26Ag6DP
     DEFAULT_WEIGHTS = 'checkpoint.pth'
-    paths = ['images/bottle1.jpg', 'images/bottle2.jpg']
+    paths = ['images/bottle1.jpg', 'images/bottle2.jpg', 'images/bottle3.jpg', 'images/bottle4.jpg']
     main(paths)
     

@@ -17,7 +17,7 @@ COCO_INSTANCE_CATEGORY_NAMES = [
     'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
 ]
 
-def segment(image, model=None, use_cuda = False):
+def segment(images, model=None, use_cuda = False):
     """
     image: image location
     """
@@ -27,36 +27,40 @@ def segment(image, model=None, use_cuda = False):
 
     to_tensor = torchvision.transforms.ToTensor()
     inp = []
-    tensor = to_tensor(Image.open(image))
-    if torch.cuda.is_available() and use_cuda:
-        tensor = tensor.cuda()
-    print(tensor.shape)
-    inp.append(tensor)
+    for image in images:
+        tensor = to_tensor(Image.open(image))
+        assert(tensor.shape[0] == 3)
+        if torch.cuda.is_available() and use_cuda:
+            tensor = tensor.cuda()
+        inp.append(tensor)
 
     model.eval()
     if torch.cuda.is_available() and use_cuda:
        model = model.cuda()
 
-    output = model(inp)[0]
-    print(f"Detected {[COCO_INSTANCE_CATEGORY_NAMES[x] for x in output['labels']]}")
-    print(f"Scores {output['scores']}")
+    output = model(inp)
+    result = []
+    for i, y in enumerate(output):
+        print(f"Detected {[COCO_INSTANCE_CATEGORY_NAMES[x] for x in y['labels']]}")
+        print(f"Scores {y['scores']}")
 
-    mask = output['masks'][0] >= 0.5
-    mask = torch.cat(3 * [mask])
 
-    inp[0][~mask] = 1
-    result = inp[0]
+        mask = y['masks'][0] >= 0.5
+        mask = torch.cat(3 * [mask])
 
-    plt.imshow(result.detach().cpu().permute(1,2,0).numpy())
-    plt.show()
+        inp[i][~mask] = 1
+        result.append(inp[i])
+
+    #plt.imshow(result[0].detach().cpu().permute(1,2,0).numpy())
+    #plt.show()
 
     return result
 
 if __name__ == '__main__':
     image = 'images/chair.jpg'
-    result = segment(image)
+    result = segment([image])
 
-    plt.imshow(result.detach().cpu().permute(1,2,0).numpy())
+    plt.imshow(result[0].detach().cpu().permute(1,2,0).numpy())
     plt.show()
 
 
