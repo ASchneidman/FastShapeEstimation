@@ -4,8 +4,10 @@ Demo code for the paper
 Choy et al., 3D-R2N2: A Unified Approach for Single and Multi-view 3D Object
 Reconstruction, ECCV 2016
 '''
+
 import os
 import sys
+sys.path.append(os.path.abspath('submodules/RNN'))
 import shutil
 import numpy as np
 from subprocess import call
@@ -23,6 +25,12 @@ import skimage.measure
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
+from segment import segment
+import torchvision.transforms as transforms
+import torchvision
+
+from fit_mesh import fit_mesh
+
 
 DEFAULT_WEIGHTS = 'output/ResidualGRUNet/default_model/checkpoint.pth'
 
@@ -32,14 +40,17 @@ def load_demo_images(paths):
     img_w = cfg.CONST.IMG_W
     
     imgs = []
-    
     for path in paths:
-        img = Image.open(path)
+        #img = Image.open(path)
+        img = segment(path)
+        print(img.shape)
+        img = transforms.ToPILImage()(img)
         img = img.resize((img_h, img_w), Image.ANTIALIAS)
         img = preprocess_img(img, train=False)
         imgs.append([np.array(img).transpose( \
                         (2, 0, 1)).astype(np.float32)])
     ims_np = np.array(imgs).astype(np.float32)
+
     return torch.from_numpy(ims_np)
 
 
@@ -92,13 +103,19 @@ def main(paths):
     plt.savefig('gen.png')
 
 
+    faces = torch.tensor(faces.copy())
+    verts = (torch.tensor(verts.copy()) - 16) / 32
+    fit_mesh({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, None)
+
+
+
 if __name__ == '__main__':
     # Set the batch size to 1
     # run: python estimate_shape.py
     # change the path to images and pretrained weights
     cfg_from_list(['CONST.BATCH_SIZE', 1])
     # weight: https://drive.google.com/open?id=1LtNhuUQdAeAyIUiuCavofBpjw26Ag6DP
-    DEFAULT_WEIGHTS = 'path/to/weight.pkl'
-    paths = ['images/chair.png']
+    DEFAULT_WEIGHTS = 'checkpoint.pth'
+    paths = ['images/bottle1.jpg', 'images/bottle2.jpg']
     main(paths)
     

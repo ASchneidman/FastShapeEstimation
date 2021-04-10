@@ -17,7 +17,7 @@ COCO_INSTANCE_CATEGORY_NAMES = [
     'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
 ]
 
-def segment(image, model=None):
+def segment(image, model=None, use_cuda = False):
     """
     image: image location
     """
@@ -28,25 +28,29 @@ def segment(image, model=None):
     to_tensor = torchvision.transforms.ToTensor()
     inp = []
     tensor = to_tensor(Image.open(image))
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and use_cuda:
         tensor = tensor.cuda()
+    print(tensor.shape)
     inp.append(tensor)
 
     model.eval()
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and use_cuda:
        model = model.cuda()
 
     output = model(inp)[0]
-    print(output['labels'])
-    print(f"Detected {COCO_INSTANCE_CATEGORY_NAMES[output['labels'][0]]}")
+    print(f"Detected {[COCO_INSTANCE_CATEGORY_NAMES[x] for x in output['labels']]}")
+    print(f"Scores {output['scores']}")
 
     mask = output['masks'][0] >= 0.5
     mask = torch.cat(3 * [mask])
 
     inp[0][~mask] = 1
-    return inp[0]
+    result = inp[0]
 
-    return mask * inp[0]
+    plt.imshow(result.detach().cpu().permute(1,2,0).numpy())
+    plt.show()
+
+    return result
 
 if __name__ == '__main__':
     image = 'images/chair.jpg'
