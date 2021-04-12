@@ -29,7 +29,7 @@ from segment import segment
 import torchvision.transforms as transforms
 import torchvision
 
-from fit_mesh import fit_mesh
+from fit_mesh import fit_mesh, fit_uv_mesh
 
 
 DEFAULT_WEIGHTS = 'output/ResidualGRUNet/default_model/checkpoint.pth'
@@ -98,6 +98,7 @@ def main(paths):
     voxel2obj(pred_file_name, voxel_prediction[0, 1] > cfg.TEST.VOXEL_THRESH)
 
     verts, faces, normals, values = skimage.measure.marching_cubes_lewiner(voxel_prediction[0, 1] > cfg.TEST.VOXEL_THRESH)
+    """
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection='3d')
 
@@ -115,11 +116,11 @@ def main(paths):
 
     plt.tight_layout()
     plt.savefig('gen.png')
+    """
 
-
-    faces = torch.tensor(faces.copy())
-    verts = (torch.tensor(verts.copy()) - 16) / 32
-    fit_mesh({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, None)
+    faces = faces.copy()
+    verts = (verts.copy() - 16) / 32
+    fit_uv_mesh({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, None)
 
 
 
