@@ -17,7 +17,7 @@ COCO_INSTANCE_CATEGORY_NAMES = [
     'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
 ]
 
-def segment(images, model=None, use_cuda = False):
+def segment(images, model=None, use_cuda = False, background_color = 1):
     """
     image: image location
     """
@@ -41,15 +41,15 @@ def segment(images, model=None, use_cuda = False):
     output = model(inp)
     result = []
     for i, y in enumerate(output):
-        print(f"Detected {[COCO_INSTANCE_CATEGORY_NAMES[x] for x in y['labels']]}")
-        print(f"Scores {y['scores']}")
+        #print(f"Detected {[COCO_INSTANCE_CATEGORY_NAMES[x] for x in y['labels']]}")
+        #print(f"Scores {y['scores']}")
 
 
         mask = y['masks'][0] >= 0.5
         mask = torch.cat(3 * [mask])
 
-        inp[i][~mask] = 1
-        result.append(inp[i])
+        inp[i][~mask] = background_color
+        result.append(inp[i].detach())
 
     #plt.imshow(result[0].detach().cpu().permute(1,2,0).numpy())
     #plt.show()

@@ -1,5 +1,8 @@
 import torch, math
 import numpy as np
+import torchvision
+from segment import segment
+import os
 
 def projection(x=0.1, n=1.0, f=50.0):
     return torch.tensor([[n/x,    0.,            0.,              0],
@@ -14,12 +17,26 @@ def translate(x=0., y=0., z=0.):
                      [0., 0., 0., 1.]]).float()
 
 
-def rotate(a):
+def rotate_z(a):
     s, c = math.sin(a), math.cos(a)
     return torch.tensor([[c,  s, 0, 0],
                         [-s,  c, 0, 0],
                         [0, 0, 1., 0],
                         [0,  0, 0, 1]]).float()
+
+def rotate_x(a):
+    s, c = math.sin(a), math.cos(a)
+    return torch.tensor([[1,  0, 0, 0],
+                     [0,  c, s, 0],
+                     [0, -s, c, 0],
+                     [0,  0, 0, 1]]).float()
+
+def rotate_y(a):
+    s, c = math.sin(a), math.cos(a)
+    return torch.tensor([[ c, 0, s, 0],
+                     [ 0, 1, 0, 0],
+                     [-s, 0, c, 0],
+                     [ 0, 0, 0, 1]]).float()
 
 _glfw_window = None
 def display_image(image, zoom=None, size=None, title=None): # HWC
@@ -64,3 +81,36 @@ def display_image(image, zoom=None, size=None, title=None): # HWC
     if glfw.window_should_close(_glfw_window):
         return False
     return True
+
+class ReferenceImages(torch.utils.data.Dataset):
+    def __init__(self, dir, w, h):
+        self.dir = dir
+
+        self.segment_model = torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True)
+        self.transforms = torchvision.transforms.Resize((h,w))
+
+        self.images = []
+
+        # presegment the images
+        for image in os.listdir(dir):
+            im = image.split('.')
+            rot = im[1]
+
+            self.images.append((self.transform(os.path.join(self.dir, image)), math.radians(float(rot))))
+
+
+
+    def transform(self, im: str):
+        return self.transforms(segment([im], model=self.segment_model, use_cuda=True, background_color=0)[0])
+
+    def __getitem__(self, idx):
+        """
+        im = self.images[idx].split('.')
+        rot = im[1]
+
+        return self.transform(os.path.join(self.dir, self.images[idx])), math.radians(float(rot))
+        """
+        return self.images[idx]
+
+    def __len__(self):
+        return len(self.images)

@@ -36,6 +36,7 @@ DEFAULT_WEIGHTS = 'output/ResidualGRUNet/default_model/checkpoint.pth'
 
 
 def load_demo_images(paths):
+    paths = [os.path.join(paths, x) for x in os.listdir(paths)]
     img_h = cfg.CONST.IMG_H
     img_w = cfg.CONST.IMG_W
 
@@ -93,7 +94,6 @@ def main(paths):
     # Run the network
     voxel_prediction, _ = solver.test_output(demo_imgs)
     voxel_prediction = voxel_prediction.detach().cpu().numpy()
-    print(voxel_prediction.shape)
     # Save the prediction to an OBJ file (mesh file).
     voxel2obj(pred_file_name, voxel_prediction[0, 1] > cfg.TEST.VOXEL_THRESH)
 
@@ -120,7 +120,8 @@ def main(paths):
 
     faces = faces.copy()
     verts = (verts.copy() - 16) / 32
-    fit_uv_mesh({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, None)
+    #fit_uv_mesh({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, None)
+    fit_mesh({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, paths)
 
 
 
@@ -131,6 +132,7 @@ if __name__ == '__main__':
     cfg_from_list(['CONST.BATCH_SIZE', 1])
     # weight: https://drive.google.com/open?id=1LtNhuUQdAeAyIUiuCavofBpjw26Ag6DP
     DEFAULT_WEIGHTS = 'checkpoint.pth'
-    paths = ['images/bottle1.jpg', 'images/bottle2.jpg', 'images/bottle3.jpg', 'images/bottle4.jpg']
-    main(paths)
+    #paths = ['images/bottle1.jpg', 'images/bottle2.jpg', 'images/bottle3.jpg', 'images/bottle4.jpg']
+    path = 'images/bottle'
+    main(path)
     

@@ -3,8 +3,11 @@ import numpy as np
 import nvdiffrast.torch as dr
 import math
 from PIL import Image
+import matplotlib.pyplot as plt
 
 import util
+
+from submodules.RNN.lib.voxel import write_obj
 
 
 def transform_pos(mtx, pos):
@@ -65,48 +68,83 @@ def init_uv(stack_count=128, sector_count=128):
 
 def fit_mesh(
     initial_mesh: dict,
-    target_dataset,
-    max_iterations: int = 5000,
-    resolution: int = 4,
+    target_dataset_dir: str,
+    max_iterations: int = 10000,
+    resolution: int = 32,
     log_interval: int = 10,
-    dispaly_interval = None,
+    display_interval = 1000,
     display_res = 512,
     out_dir = None,
     mp4save_interval = None
     ):
-    pos_idx = initial_mesh['pos_idx'].cuda()
-    col_idx = initial_mesh['col_idx'].cuda()
-    vtx_pos = initial_mesh['vtx_pos'].cuda()
-    vtx_col = initial_mesh['vtx_col'].cuda()
+
+    distance = 3.5
+
+    target_dataset = util.ReferenceImages(target_dataset_dir, resolution, resolution)
+
+    pos_idx = torch.from_numpy(initial_mesh['pos_idx'].astype(np.int32)).cuda()
+    vtx_pos = torch.from_numpy(initial_mesh['vtx_pos'].astype(np.float32)).cuda()
+
+    init_rot = util.rotate_z(-math.pi/2).cuda()
+    vtx_pos = transform_pos(init_rot, vtx_pos)[0][:, 0:3]
+
+    vtx_pos.requires_grad = True
+    uv, uv_idx = init_uv()
+    uv_idx = uv_idx[:pos_idx.shape[0]]
+    uv_idx  = torch.from_numpy(uv_idx.astype(np.int32)).cuda()
+    vtx_uv  = torch.from_numpy(uv.astype(np.float32)).cuda()
+
+
+    #col_idx  = torch.from_numpy(initial_mesh['col_idx'].astype(np.int32)).cuda()
+    #vtx_col  = initial_mesh['vtx_col'].cuda()
+    tex = torch.ones((1024, 1024, 3)).float() / 2
+    tex = tex.cuda()
 
     glctx = dr.RasterizeGLContext()
 
 
-    #optimizer    = torch.optim.Adam([vtx_pos, vtx_col_opt], lr=1e-2)
-    #scheduler    = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: max(0.01, 10**(-x*0.0005)))
+    optimizer    = torch.optim.Adam([vtx_pos, tex], lr=1e-2)
+    scheduler    = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: max(0.01, 10**(-x*0.0005)))
 
     total_steps = 0
 
-    estimate = render(glctx, vtx_pos, pos_idx, vtx_col, col_idx, 0, 3.5, 256)
-    img = estimate.detach().cpu().numpy()
-    print(img.shape)
-    while True:
-        util.display_image(img[0], title='test', size=512)
-    return
 
     for i in range(max_iterations):
-        for angle, distance, img in target_dataset:
-            img = img.cuda()
+        for img, angle in target_dataset:
+            img = img.cuda().permute(2,1,0)
 
-            estimate = render(glctx, vtx_pos, pos_idx, vtx_col, col_idx, angle, distance, resolution)
+
+            # create the model-view-projection matrix
+            # rotate model about z axis by angle
+            rot = util.rotate_y(angle)
+            # translate by distance
+            tr = util.translate(z=-distance)
+            # perspective projection
+            proj = util.projection(x=0.4)
+
+            mtx = proj.matmul(tr.matmul(rot)).cuda()
+            
+            estimate = render(glctx, mtx, vtx_pos, pos_idx, vtx_uv, uv_idx, tex, resolution, enable_mip=False, max_mip_level=0)[0]
 
             # compute loss
             loss = torch.mean((estimate - img) ** 2)
             optimizer.zero_grad()
             loss.backward()
+            optimizer.step()
             scheduler.step()
 
-            total_steps += 1
+
+            if display_interval and (i % display_interval == 0):
+                estimate = render(glctx, mtx, vtx_pos, pos_idx, vtx_uv, uv_idx, tex, 256, enable_mip=False, max_mip_level=0)[0].detach().cpu().numpy()
+                plt.imshow(estimate)
+                plt.show()
+                plt.imshow(img.detach().cpu().numpy())
+                plt.show()
+
+    write_obj('diff_render_estimate.obj', vtx_pos.detach().cpu().tolist(), pos_idx.detach().cpu().tolist())
+    print("Outputted to diff_render_estimate.obj")
+    
+
 
 
 def fit_uv_mesh(initial_mesh: dict,
