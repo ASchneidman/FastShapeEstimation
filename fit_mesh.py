@@ -99,12 +99,14 @@ def fit_mesh(
     #vtx_col  = initial_mesh['vtx_col'].cuda()
     tex = torch.ones((1024, 1024, 3)).float() / 2
     tex = tex.cuda()
+    tex.requires_grad = True
 
     glctx = dr.RasterizeGLContext()
 
+    lr_ramp = .1
 
-    optimizer    = torch.optim.Adam([vtx_pos, tex], lr=1e-2)
-    scheduler    = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: max(0.01, 10**(-x*0.0005)))
+    optimizer    = torch.optim.Adam([{'params': vtx_pos, 'lr': 1e-2}, {'params': tex, 'lr': 1e-2}])
+    scheduler    = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[lambda x: max(0.01, 10**(-x*0.0005)), lambda x: lr_ramp**(float(x)/float(max_iterations))])
 
     total_steps = 0
 
@@ -124,7 +126,7 @@ def fit_mesh(
 
             mtx = proj.matmul(tr.matmul(rot)).cuda()
             
-            estimate = render(glctx, mtx, vtx_pos, pos_idx, vtx_uv, uv_idx, tex, resolution, enable_mip=False, max_mip_level=0)[0]
+            estimate = render(glctx, mtx, vtx_pos, pos_idx, vtx_uv, uv_idx, tex, resolution, enable_mip=True, max_mip_level=4)[0]
 
             # compute loss
             loss = torch.mean((estimate - img) ** 2)
@@ -133,9 +135,10 @@ def fit_mesh(
             optimizer.step()
             scheduler.step()
 
+            print(tex.min(), tex.max())
 
             if display_interval and (i % display_interval == 0):
-                estimate = render(glctx, mtx, vtx_pos, pos_idx, vtx_uv, uv_idx, tex, 256, enable_mip=False, max_mip_level=0)[0].detach().cpu().numpy()
+                estimate = render(glctx, mtx, vtx_pos, pos_idx, vtx_uv, uv_idx, tex, 256, enable_mip=True, max_mip_level=4)[0].detach().cpu().numpy()
                 plt.imshow(estimate)
                 plt.show()
                 plt.imshow(img.detach().cpu().numpy())
