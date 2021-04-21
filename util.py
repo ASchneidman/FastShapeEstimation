@@ -87,7 +87,12 @@ class ReferenceImages(torch.utils.data.Dataset):
         self.dir = dir
 
         self.segment_model = torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True)
-        self.transforms = torchvision.transforms.Resize((h,w))
+        # self.transforms = torchvision.transforms.Resize((h,w))
+        self.transforms = torchvision.transforms.Compose([
+                            torchvision.transforms.ToPILImage(),
+                            torchvision.transforms.Resize((h,w)),
+                            torchvision.transforms.ToTensor()
+                        ])
 
         self.images = []
 
@@ -101,7 +106,7 @@ class ReferenceImages(torch.utils.data.Dataset):
 
 
     def transform(self, im: str):
-        return self.transforms(segment([im], model=self.segment_model, use_cuda=True, background_color=0)[0])
+        return self.transforms(segment([im], model=self.segment_model, use_cuda=True, background_color=0)[0].cpu())
 
     def __getitem__(self, idx):
         """

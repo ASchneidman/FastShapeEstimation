@@ -29,7 +29,8 @@ from segment import segment
 import torchvision.transforms as transforms
 import torchvision
 
-from fit_mesh import fit_mesh, fit_uv_mesh
+from fit_mesh import fit_mesh
+from fit_mesh_col import fit_mesh_col
 
 
 DEFAULT_WEIGHTS = 'output/ResidualGRUNet/default_model/checkpoint.pth'
@@ -120,8 +121,9 @@ def main(paths):
 
     faces = faces.copy()
     verts = (verts.copy() - 16) / 32
-    #fit_uv_mesh({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, None)
-    fit_mesh({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, paths)
+
+    # fit_mesh({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, paths, display_interval=50)
+    fit_mesh_col({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, paths, display_interval=50)
 
 
 
