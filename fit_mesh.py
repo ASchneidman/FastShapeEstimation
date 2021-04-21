@@ -70,7 +70,7 @@ def fit_mesh(
     initial_mesh: dict,
     target_dataset_dir: str,
     max_iterations: int = 10000,
-    resolution: int = 32,
+    resolution: int = 256,
     log_interval: int = 10,
     display_interval = None,
     display_res = 512,
@@ -114,23 +114,20 @@ def fit_mesh(
     M2 = torch.eye(len(target_dataset)).cuda()
     M2.requires_grad = True
 
-    M3 = torch.zeros((3, vtx_pos.shape[0], len(target_dataset))).cuda()
+    #M3 = torch.zeros((3, vtx_pos.shape[0], len(target_dataset))).cuda()
+    M3 = torch.zeros((3 * vtx_pos.shape[0], len(target_dataset))).cuda()
     M3.requires_grad = True
 
     lr_ramp = .1
-    #params = [{'params': vtx_pos, 'lr': 1e-2}, {'params': tex, 'lr': 1e-2}]
     params = [{'params': [M1, M2, M3], 'lr': 1e-3}, {'params': tex, 'lr': 1e-2}]
-    lambdas = [lambda x: max(0.01, 10**(-x*0.0005)), lambda x: lr_ramp**(float(x)/float(max_iterations))]
+    #lambdas = [lambda x: max(0.01, 10**(-x*0.0005)), lambda x: lr_ramp**(float(x)/float(max_iterations))]
 
-    #optimizer = torch.optim.Adam([params[0]])
-    #scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[lambdas[0]])
 
     optimizer    = torch.optim.Adam(params)
-    scheduler    = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambdas)
+    #scheduler    = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambdas)
 
     total_steps = 0
 
-    previous_pos = vtx_pos.detach().clone()
 
     for i in range(max_iterations):
         for j, (img, angle) in enumerate(target_dataset):
@@ -139,9 +136,11 @@ def fit_mesh(
             frame_tensor = torch.zeros(len(target_dataset))
             frame_tensor[j] = 1
             frame_tensor = frame_tensor.cuda()
+            frame_tensor.requires_grad = True
 
-            deltas = torch.matmul(M3, torch.matmul(M2, torch.matmul(M1, frame_tensor)))
-            deformed_vtxs = vtx_pos + deltas.T
+            deltas = torch.matmul(M3, torch.matmul(M2, torch.matmul(M1, frame_tensor))).flatten()
+            #deformed_vtxs = vtx_pos + deltas.T
+            deformed_vtxs = (vtx_pos.flatten() + deltas).reshape((vtx_pos.shape[0], 3))
 
             # create the model-view-projection matrix
             # rotate model about z axis by angle
@@ -155,40 +154,42 @@ def fit_mesh(
             mtx = proj.matmul(tr.matmul(rot)).cuda()
             mtx.requires_grad = True
             
-            #estimate = render(glctx, mtx, vtx_pos, pos_idx, vtx_uv, uv_idx, tex, resolution, enable_mip=True, max_mip_level=4)[0]
-            estimate = render(glctx, mtx, deformed_vtxs, pos_idx, vtx_uv, uv_idx, tex, resolution, enable_mip=True, max_mip_level=4)[0]
+            estimate = render(glctx, mtx, deformed_vtxs, pos_idx, vtx_uv, uv_idx, tex, resolution, enable_mip=False, max_mip_level=4)[0]
 
             # compute loss
             loss = torch.mean((estimate - img) ** 2)
 
             # compute regularizer
-            #reg = torch.mean((util.compute_curvature(vtx_pos, laplace) - util.compute_curvature(previous_pos, laplace)) ** 2)
-            reg = torch.mean((util.compute_curvature(deformed_vtxs, laplace) - util.compute_curvature(previous_pos, laplace)) ** 2)
+            reg = torch.mean((util.compute_curvature(deformed_vtxs, laplace) - util.compute_curvature(vtx_pos, laplace)) ** 2)
             
             # combine
-            loss = loss + 1 * reg
+            loss = loss + 0 * reg
+
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            scheduler.step()
+            #scheduler.step()
 
             with torch.no_grad():
                 # clamp texture between 0 and 1
                 tex.clamp_(0, 1)
 
             if (display_interval and (i % display_interval == 0)) or (i == max_iterations - 1):
-                #estimate = render(glctx, mtx, vtx_pos, pos_idx, vtx_uv, uv_idx, tex, 256, enable_mip=True, max_mip_level=4)[0].detach().cpu().numpy()
-                estimate = render(glctx, mtx, deformed_vtxs, pos_idx, vtx_uv, uv_idx, tex, 256, enable_mip=True, max_mip_level=4)[0].detach().cpu().numpy()
-                plt.imshow(estimate)
-                plt.show()
-                plt.imshow(img.detach().cpu().numpy())
-                plt.show()
+                print(loss)
+                with torch.no_grad():
+                    estimate = render(glctx, mtx, deformed_vtxs, pos_idx, vtx_uv, uv_idx, tex, resolution, enable_mip=True, max_mip_level=4)[0].detach().cpu().numpy()
+                    plt.imshow(estimate)
+                    plt.show()
+                    plt.imshow(img.detach().cpu().numpy())
+                    plt.show()
 
 
 
     write_obj('diff_render_estimate.obj', vtx_pos.detach().cpu().tolist(), pos_idx.detach().cpu().tolist())
     print("Outputted to diff_render_estimate.obj")
+    Image.fromarray((tex.detach().cpu().numpy() * 255).astype(np.uint8)).save('diff_render_tex.png')
+    print("Outputted texture to diff_render_tex.png")
     
 
 
