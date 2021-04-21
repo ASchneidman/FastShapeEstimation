@@ -114,3 +114,56 @@ class ReferenceImages(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.images)
+
+
+def load_obj(filename):
+    vertices = []
+    faces = []
+    with open(filename, 'r') as f:
+        for s in f:
+            l = s.strip('\n')
+            if len(l) == 0:
+                continue
+            if l[0] == 'v':
+                parts = l.split(' ')
+                vertices.append([float(x) for x in parts[1:]])
+            if l[0] == 'f':
+                parts = l.split(' ')
+                faces.append([int(x) for x in parts[1:]])
+    # make sure faces is  0 indexed
+    return {'pos_idx': np.array(faces) - 1, 'vtx_pos': np.array(vertices)}
+
+def compute_laplace_matrix(verts, faces):
+    print(faces.min(), faces.max())
+    print(verts.shape)
+    L = torch.zeros(verts.shape[0], verts.shape[0])
+    """
+    for vi in range(verts.shape[0]):
+        # find neighbors
+        for fi in range(faces.shape[0]):
+            if faces[fi][0] == vi or faces[fi][1] == vi or faces[fi][2] == vi:
+                L[vi][faces[fi][0]] = 1
+                L[vi][faces[fi][1]] = 1
+                L[vi][faces[fi][2]] = 1
+        L[vi][vi] = 0
+        L[vi] /= L[vi].sum()
+    """
+    for fi in range(faces.shape[0]):
+        for vi in faces[fi]:
+            L[vi][faces[fi][0]] = 1
+            L[vi][faces[fi][1]] = 1
+            L[vi][faces[fi][2]] = 1
+    
+    for vi in range(verts.shape[0]):
+        L[vi][vi] = 0
+        L[vi] /= L[vi].sum()
+    
+
+    #torch.save(L, 'laplace.pt')
+    print("Finished computing laplacian")
+
+    return L
+
+    
+def compute_curvature(verts, laplace):
+    return verts - torch.matmul(laplace, verts)

@@ -69,7 +69,7 @@ def init_uv(stack_count=128, sector_count=128):
 def fit_mesh(
     initial_mesh: dict,
     target_dataset_dir: str,
-    max_iterations: int = 10000,
+    max_iterations: int = 2000,
     resolution: int = 32,
     log_interval: int = 10,
     display_interval = 1000,
@@ -82,8 +82,12 @@ def fit_mesh(
 
     target_dataset = util.ReferenceImages(target_dataset_dir, resolution, resolution)
 
-    pos_idx = torch.from_numpy(initial_mesh['pos_idx'].astype(np.int32)).cuda()
-    vtx_pos = torch.from_numpy(initial_mesh['vtx_pos'].astype(np.float32)).cuda()
+    pos_idx = torch.from_numpy(initial_mesh['pos_idx'].astype(np.int32))
+    vtx_pos = torch.from_numpy(initial_mesh['vtx_pos'].astype(np.float32))
+
+    laplace = util.compute_laplace_matrix(vtx_pos, pos_idx).cuda()
+    pos_idx = pos_idx.cuda()
+    vtx_pos = vtx_pos.cuda()
 
     init_rot = util.rotate_z(-math.pi/2).cuda()
     vtx_pos = transform_pos(init_rot, vtx_pos)[0][:, 0:3]
@@ -105,11 +109,19 @@ def fit_mesh(
 
     lr_ramp = .1
 
-    optimizer    = torch.optim.Adam([{'params': vtx_pos, 'lr': 1e-2}, {'params': tex, 'lr': 1e-2}])
+    params = [{'params': vtx_pos, 'lr': 1e-2}, {'params': tex, 'lr': 1e-2}]
+    lambdas = [lambda x: max(0.01, 10**(-x*0.0005)), lambda x: lr_ramp**(float(x)/float(max_iterations))]
+
+    #optimizer = torch.optim.Adam([params[0]])
+    #scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[lambdas[0]])
+
+    optimizer    = torch.optim.Adam([{'params': vtx_pos, 'lr': 1e-3}, {'params': tex, 'lr': 1e-3}])
     scheduler    = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[lambda x: max(0.01, 10**(-x*0.0005)), lambda x: lr_ramp**(float(x)/float(max_iterations))])
+
 
     total_steps = 0
 
+    previous_pos = vtx_pos.detach().clone()
 
     for i in range(max_iterations):
         for img, angle in target_dataset:
@@ -130,19 +142,31 @@ def fit_mesh(
 
             # compute loss
             loss = torch.mean((estimate - img) ** 2)
+
+            # compute regularizer
+            reg = torch.mean((util.compute_curvature(vtx_pos, laplace) - util.compute_curvature(previous_pos, laplace)) ** 2)
+            
+            # combine
+            loss = loss + 1 * reg
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             scheduler.step()
 
-            print(tex.min(), tex.max())
+            with torch.no_grad():
+                # clamp texture between 0 and 1
+                tex.clamp_(0, 1)
 
-            if display_interval and (i % display_interval == 0):
+            if (display_interval and (i % display_interval == 0)) or (i == max_iterations - 1):
                 estimate = render(glctx, mtx, vtx_pos, pos_idx, vtx_uv, uv_idx, tex, 256, enable_mip=True, max_mip_level=4)[0].detach().cpu().numpy()
                 plt.imshow(estimate)
                 plt.show()
                 plt.imshow(img.detach().cpu().numpy())
                 plt.show()
+            break
+
+
 
     write_obj('diff_render_estimate.obj', vtx_pos.detach().cpu().tolist(), pos_idx.detach().cpu().tolist())
     print("Outputted to diff_render_estimate.obj")
@@ -155,7 +179,7 @@ def fit_uv_mesh(initial_mesh: dict,
                 max_iterations: int = 5000,
                 resolution: int = 4,
                 log_interval: int = 10,
-                dispaly_interval = None,
+                dispaly_interval = 1000,
                 display_res = 512,
                 out_dir = None,
                 mp4save_interval = None
@@ -194,9 +218,17 @@ def fit_uv_mesh(initial_mesh: dict,
 
 
 if __name__ == '__main__':
-    with np.load('cube_c.npz') as f:
-        pos_idx, vtxp, col_idx, vtxc = f.values()
-    fit_mesh({'pos_idx': torch.tensor(pos_idx.astype(np.int32)), 
-    'vtx_pos': torch.tensor(vtxp.astype(np.float32)), 
-    'col_idx': torch.tensor(col_idx.astype(np.int32)), 
-    'vtx_col': torch.tensor(vtxc.astype(np.float32))}, None)
+    #mesh = util.load_obj('sphere.obj')
+    mesh = util.load_obj('prediction.obj')
+    vtx_pos = mesh['vtx_pos']
+    # make all positive
+    vtx_pos += vtx_pos.min()
+    vtx_pos -= vtx_pos.min()
+    vtx_pos /= vtx_pos.max()
+    vtx_pos -= 0.5
+    mesh['vtx_pos'] = vtx_pos
+
+    for k,v in mesh.items():
+        assert(v.shape[1] == 3)
+
+    fit_mesh(mesh, 'images/bottle')
