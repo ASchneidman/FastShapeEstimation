@@ -71,7 +71,7 @@ def fit_mesh(
     target_dataset_dir: str,
     max_iterations: int = 10000,
     resolution: int = 256,
-    log_interval: int = 10,
+    log_interval: int = 1000,
     display_interval = None,
     display_res = 512,
     out_dir = None,
@@ -163,7 +163,7 @@ def fit_mesh(
             reg = torch.mean((util.compute_curvature(deformed_vtxs, laplace) - util.compute_curvature(vtx_pos, laplace)) ** 2)
             
             # combine
-            loss = loss + 0 * reg
+            loss = 5 * loss + 0 * reg
 
 
             optimizer.zero_grad()
@@ -176,7 +176,6 @@ def fit_mesh(
                 tex.clamp_(0, 1)
 
             if (display_interval and (i % display_interval == 0)) or (i == max_iterations - 1):
-                print(loss)
                 with torch.no_grad():
                     estimate = render(glctx, mtx, deformed_vtxs, pos_idx, vtx_uv, uv_idx, tex, resolution, enable_mip=True, max_mip_level=4)[0].detach().cpu().numpy()
                     plt.imshow(estimate)
@@ -184,10 +183,20 @@ def fit_mesh(
                     plt.imshow(img.detach().cpu().numpy())
                     plt.show()
 
+            if log_interval and i % log_interval == 0:
+                print(f"Loss: {loss}")
+                print(M1.grad)
 
+    with torch.no_grad():
+        for i, (im, _) in enumerate(target_dataset):
+            frame_tensor = torch.zeros(len(target_dataset))
+            frame_tensor[j] = 1
+            frame_tensor = frame_tensor.cuda()
 
-    write_obj('diff_render_estimate.obj', vtx_pos.detach().cpu().tolist(), pos_idx.detach().cpu().tolist())
-    print("Outputted to diff_render_estimate.obj")
+            deltas = torch.matmul(M3, torch.matmul(M2, torch.matmul(M1, frame_tensor))).flatten()
+            deformed_vtxs = (vtx_pos.flatten() + deltas).reshape((vtx_pos.shape[0], 3))
+
+            write_obj(f"frame_{i}.obj", deformed_vtxs.detach().cpu().tolist(), pos_idx.detach().cpu().tolist())
     Image.fromarray((tex.detach().cpu().numpy() * 255).astype(np.uint8)).save('diff_render_tex.png')
     print("Outputted texture to diff_render_tex.png")
     
