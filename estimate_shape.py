@@ -77,7 +77,6 @@ def main(paths):
 
     # load images
     demo_imgs = load_demo_images(paths)
-    print(demo_imgs.shape)
 
     # Use the default network model
     NetClass = load_model('ResidualGRUNet')
@@ -123,7 +122,7 @@ def main(paths):
     verts = (verts.copy() - 16) / 32
 
     # fit_mesh({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, paths, display_interval=50)
-    fit_mesh_col({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, paths, display_interval=50)
+    fit_mesh_col({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, paths, display_interval=None)
 
 
 

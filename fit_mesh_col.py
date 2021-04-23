@@ -113,7 +113,7 @@ def fit_mesh_col(
             reg = torch.mean((util.compute_curvature(deformed_vtxs, laplace) - util.compute_curvature(vtx_pos, laplace)) ** 2) + torch.mean(deltas**2)
             
             # combine
-            loss = loss + reg
+            loss = loss + 3* reg
 
             optimizer.zero_grad()
             loss.backward()
@@ -142,8 +142,10 @@ def fit_mesh_col(
 
             deltas = torch.matmul(M3, torch.matmul(M2, torch.matmul(M1, frame_tensor))).flatten()
             deformed_vtxs = (vtx_pos.flatten() + deltas).reshape((vtx_pos.shape[0], 3))
+            deformed_vtxs.clip_(-1.0, 1.0)
 
-            write_obj(f"frame_{i}.obj", deformed_vtxs.detach().cpu().tolist(), pos_idx.detach().cpu().tolist())
+            #write_obj(f"frame_{i}.obj", deformed_vtxs.detach().cpu().tolist(), pos_idx.detach().cpu().tolist())
+            util.write_obj(f"frame_{i}.obj", deformed_vtxs.detach().cpu().tolist(), pos_idx.detach().cpu().tolist(), vtx_col.detach().cpu().tolist())
 
     np.savez('vtx_col.npz', vtx_col=vtx_col.cpu().detach().numpy())
 
