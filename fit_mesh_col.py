@@ -118,7 +118,7 @@ def fit_mesh_col(
             # combine
             loss = loss + 5 * reg
 
-            loss_hist.append(loss)
+            loss_hist.append(loss.cpu().numpy())
 
             optimizer.zero_grad()
             loss.backward()
