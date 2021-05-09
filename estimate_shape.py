@@ -95,10 +95,10 @@ def main(paths):
     voxel_prediction, _ = solver.test_output(demo_imgs)
     voxel_prediction = voxel_prediction.detach().cpu().numpy()
     # Save the prediction to an OBJ file (mesh file).
-    voxel2obj(pred_file_name, voxel_prediction[0, 1] > cfg.TEST.VOXEL_THRESH)
+    # voxel2obj(pred_file_name, voxel_prediction[0, 1] > cfg.TEST.VOXEL_THRESH)
 
     verts, faces, normals, values = skimage.measure.marching_cubes_lewiner(voxel_prediction[0, 1] > cfg.TEST.VOXEL_THRESH)
-    """
+
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection='3d')
 
@@ -116,14 +116,13 @@ def main(paths):
 
     plt.tight_layout()
     plt.savefig('gen.png')
-    """
+
 
     faces = faces.copy()
-    verts = (verts.copy() - 16) / 32
+    verts = (verts.copy() - 16) / 16
 
     # fit_mesh({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, paths, display_interval=50)
     fit_mesh_col({'pos_idx': faces, 'vtx_pos': verts, 'col_idx': faces, 'vtx_col': torch.ones(verts.shape)}, paths, display_interval=None)
-
 
 
 if __name__ == '__main__':

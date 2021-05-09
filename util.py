@@ -172,3 +172,18 @@ def compute_laplace_matrix(verts, faces):
     
 def compute_curvature(verts, laplace):
     return verts - torch.matmul(laplace, verts)
+
+
+def write_obj(filename, verts, faces, colors):
+    """ write the verts and faces on file."""
+    with open(filename, 'w') as f:
+        # write vertices
+        f.write('g\n# %d vertex\n' % len(verts))
+        for vert, color in zip(verts, colors):
+            vert_color = tuple(vert) + tuple(color)
+            f.write('v %f %f %f %f %f %f\n' % vert_color)
+
+        # write faces
+        f.write('# %d faces\n' % len(faces))
+        for face in faces:
+            f.write('f %d %d %d\n' % tuple(face))

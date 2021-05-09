@@ -4,6 +4,7 @@ import nvdiffrast.torch as dr
 import math
 from PIL import Image
 import matplotlib.pyplot as plt
+import os
 
 import util
 
@@ -70,6 +71,7 @@ def fit_mesh_col(
 
     lr_ramp = .1
     params = [{'params': [M1, M2, M3], 'lr': 1e-3}, {'params': vtx_col, 'lr': 1e-2}]
+    # params = [{'params': vtx_col, 'lr': 1e-2}]
     #lambdas = [lambda x: max(0.01, 10**(-x*0.0005)), lambda x: lr_ramp**(float(x)/float(max_iterations))]
 
 
@@ -78,6 +80,7 @@ def fit_mesh_col(
 
     total_steps = 0
 
+    loss_hist, l2_hist, reg_hist = [], [], []
 
     for i in range(max_iterations):
         for j, (img, angle) in enumerate(target_dataset):
@@ -94,8 +97,8 @@ def fit_mesh_col(
 
             # create the model-view-projection matrix
             # rotate model about z axis by angle
-            #rot = util.rotate_y(angle)
-            rot = torch.eye(4)
+            rot = util.rotate_y(angle)
+            #rot = torch.eye(4)
             # translate by distance
             tr = util.translate(z=-distance)
             # perspective projection
@@ -113,7 +116,9 @@ def fit_mesh_col(
             reg = torch.mean((util.compute_curvature(deformed_vtxs, laplace) - util.compute_curvature(vtx_pos, laplace)) ** 2) + torch.mean(deltas**2)
             
             # combine
-            loss = loss + 3* reg
+            loss = loss + 5 * reg
+
+            loss_hist.append(loss)
 
             optimizer.zero_grad()
             loss.backward()
@@ -142,7 +147,7 @@ def fit_mesh_col(
 
             deltas = torch.matmul(M3, torch.matmul(M2, torch.matmul(M1, frame_tensor))).flatten()
             deformed_vtxs = (vtx_pos.flatten() + deltas).reshape((vtx_pos.shape[0], 3))
-            deformed_vtxs.clip_(-1.0, 1.0)
+            deformed_vtxs = torch.clamp(deformed_vtxs, -1.0, 1.0)
 
             #write_obj(f"frame_{i}.obj", deformed_vtxs.detach().cpu().tolist(), pos_idx.detach().cpu().tolist())
             util.write_obj(f"frame_{i}.obj", deformed_vtxs.detach().cpu().tolist(), pos_idx.detach().cpu().tolist(), vtx_col.detach().cpu().tolist())
@@ -151,8 +156,8 @@ def fit_mesh_col(
 
 
 if __name__ == '__main__':
-    mesh = util.load_obj('sphere.obj')
-    # mesh = util.load_obj('prediction.obj')
+    # mesh = util.load_obj('sphere.obj')
+    mesh = util.load_obj('prediction.obj')
     vtx_pos = mesh['vtx_pos']
     # make all positive
     vtx_pos += vtx_pos.min()
